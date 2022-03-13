@@ -1,4 +1,11 @@
 pub contract Entity {
+
+  pub event GeneratorCreated()
+  pub event ElementGenerateSuccess(hex: String)
+  pub event ElementGenerateFailure(hex: String)
+  pub event ElementDeposit(hex: String)
+  pub event CollectionCreated()
+
   // 元特征
   pub struct MetaFeature {
 
@@ -21,6 +28,52 @@ pub contract Entity {
     }
   }
 
+  // 实现一个新的资源
+  pub resource Collection {
+    pub let elements: @[Element]
+    init(){
+       self.elements <- []
+    }
+    pub fun deposit(element: @Element){
+      let hex = String.encodeHex(element.feature.bytes)
+      self.elements.append(<- element)
+      emit ElementDeposit(hex:hex)
+    }
+    pub fun withdraw(hex: String): @Element? {
+      var index = 0
+      while index < self.elements.length {
+        let currentHex = String.encodeHex(self.elements[index].feature.bytes)
+        if currentHex == hex {
+          return <- self.elements.remove(at: index)
+        }
+        index = index + 1
+      }
+
+      return nil
+    }
+
+    pub fun getFeatures(): [MetaFeature] {
+      var features: [MetaFeature] = []
+      var index = 0
+      while index < self.elements.length {
+        features.append(
+          self.elements[index].feature
+        )
+        index = index + 1
+      }
+      return features;
+    }
+
+    destroy(){
+      destroy self.elements
+    }
+  }
+  // 实现一个创建方法
+  pub fun createCollection(): @Collection{
+    emit CollectionCreated()
+    return <- create Collection()
+  }
+
   // 特征收集器
   pub resource Generator {
 
@@ -37,8 +90,10 @@ pub contract Entity {
       if self.features.containsKey(hex) == false {
         let element <- create Element(feature: feature)
         self.features[hex] = feature
+        emit ElementGenerateSuccess(hex: hex)
         return <- element
       } else {
+        emit ElementGenerateFailure(hex: hex)
         return nil
       }
     }
@@ -50,10 +105,23 @@ pub contract Entity {
       <- create Generator(),
       to: /storage/ElementGenerator
     )
+    emit GeneratorCreated()
     // 链接到公有空间
     self.account.link<&Generator>(
       /public/ElementGenerator, // 共有空间
       target: /storage/ElementGenerator // 目标路径
     )
+    self.account.save(
+      <- self.createCollection(),
+      to: /storage/LocalEntityCollection
+    )
+    self.account.link<&Collection>(
+      /public/LocalEntityCollection,
+      target: /storage/LocalEntityCollection
+    )
+
   }
+
+
+ 
 }
